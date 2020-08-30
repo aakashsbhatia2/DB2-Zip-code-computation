@@ -1,0 +1,108 @@
+-- ========================================
+
+-- MARK_ER_STATUS:
+-- Mark whether a facility has ER or not. 0 is assigned if ER does not exist. 1 is assigned if ER exists.
+
+-- CREATE_COMBINATIONS:
+-- Obtain all neighbors of each zip code
+
+-- ER_CHECK_1:
+-- For zip codes with neighbors, check whether both the zipcode and the neighboring zip codes have ER
+-- select zip codes with no er in both cases.
+
+-- DISTINCT_ZIPS_ER_CHECK_1
+-- Create list of distinct ER's from ER_CHECK_1
+
+-- ER_CHECK_2, DISTINCT_ZIPS_NO_NEIGHBORS:
+-- For instances where zip code has no neighbors, check whether there is an ER in the zip code and print the distinct ZIPs
+
+-- COMBINE_RESULT:
+-- Combining both results (zips with neighbors and zips without neighbors)
+
+-- Main query:
+-- Printing distinct zips as output
+
+-- ========================================
+
+WITH MARK_ER_STATUS (FACILITYNAME, ZIPCODE, SHAPE, ER_STATUS)	AS
+(
+	SELECT
+		FACILITYNAME, ZIPCODE, SHAPE,
+		CASE
+	      	WHEN
+	        	FACILITYNAME
+	     		IN
+				(
+					SELECT
+						FACILITYNAME
+					FROM
+						CSE532.FACILITYCERTIFICATION
+					WHERE
+						ATTRIBUTEVALUE = 'Emergency Department'
+				)
+				THEN
+					'1'
+	       		ELSE
+	       			'0'
+	     END
+	FROM
+		CSE532.FACILITY, CSE532.USZIP
+	WHERE
+		SUBSTRING(ZIPCODE,1,5) = GEOID10
+),
+CREATE_COMBINATIONS AS
+(
+	SELECT
+		A.FACILITYNAME AS FACILITY1, A.ZIPCODE AS ZIP1, A.SHAPE AS SHAPE1, A.ER_STATUS AS ER_STATUS1,
+		B.FACILITYNAME AS FACILITY2, B.ZIPCODE AS ZIP2, B.SHAPE AS SHAPE2, B.ER_STATUS AS ER_STATUS2
+	FROM
+		MARK_ER_STATUS A, MARK_ER_STATUS B
+	WHERE
+		SUBSTRING(A.ZIPCODE, 1, 5) <> SUBSTRING(B.ZIPCODE, 1, 5)
+		AND DB2GSE.ST_TOUCHES(A.SHAPE, B.SHAPE) = 1
+	ORDER BY A.ZIPCODE
+),
+ER_CHECK_1 (ZIP1, SUM_OF_ZIP1, SUM_OF_ZIP2) AS
+(
+	SELECT SUBSTRING(ZIP1, 1, 5), SUM(ER_STATUS1), SUM(ER_STATUS2)
+	FROM CREATE_COMBINATIONS
+	GROUP BY SUBSTRING(ZIP1, 1, 5)
+),
+DISTINCT_ZIPS_ER_CHECK_1(ZIP) AS
+(
+	SELECT DISTINCT ZIP1 FROM ER_CHECK_1
+	WHERE SUM_OF_ZIP1 = 0 AND SUM_OF_ZIP2 = 0
+),
+REMAINING_ZIPS AS
+(
+	SELECT
+		FACILITYNAME AS FACILITY1, ZIPCODE AS ZIP1, SHAPE AS SHAPE1, ER_STATUS AS ER_STATUS1
+	FROM
+		MARK_ER_STATUS
+	WHERE
+		SUBSTRING(ZIPCODE, 1, 5) NOT IN
+		(
+			SELECT SUBSTRING(ZIP1, 1, 5) FROM CREATE_COMBINATIONS
+		)
+	ORDER BY ZIPCODE
+),
+ER_CHECK_2 (ZIP_NO_NEIGHBORS, SUM_OF_ZIP3) AS
+(
+	SELECT SUBSTRING(ZIP1, 1, 5), SUM(ER_STATUS1)
+	FROM REMAINING_ZIPS
+	GROUP BY SUBSTRING(ZIP1, 1, 5)
+),
+DISTINCT_ZIPS_NO_NEIGHBORS AS
+(
+	SELECT DISTINCT ZIP_NO_NEIGHBORS
+	FROM ER_CHECK_2
+	WHERE SUM_OF_ZIP3 = 0
+),
+COMBINE_RESULT (ZIP) AS
+(
+SELECT ZIP FROM DISTINCT_ZIPS_ER_CHECK_1
+UNION ALL
+SELECT ZIP_NO_NEIGHBORS FROM DISTINCT_ZIPS_NO_NEIGHBORS
+)
+SELECT DISTINCT SUBSTRING(ZIP, 1, 5) AS ZIPCODES FROM COMBINE_RESULT
+;	
